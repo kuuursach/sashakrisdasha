@@ -1,0 +1,179 @@
+#include <Arduino.h>
+#include <WiFi.h>
+#include <HTTPClient.h>
+
+#include <dht11.h>      // Добавляем библиотеку DHT11
+dht11 DHT;               // Объявление переменной класса dht11
+#define DHT11_PIN 4    // Датчик DHT11 подключен к цифровому пину номер 4
+
+int ldr = 38;
+int light = 0;
+
+//#define WL_MAC_ADDR_LENGTH 36
+
+//////////////////////
+// WiFi Definitions //
+//////////////////////
+const char WiFiSSID[] = "qwerty"; // WiFi access point SSID
+const char WiFiPSK[] = "12345678"; // WiFi password - empty string for open access points
+
+//////////////////////////////////////////////
+// ThingWorx server definitions            //
+//  modify for a specific platform instance //
+//////////////////////////////////////////////
+
+const char TWPlatformBaseURL[] = "https://pp-1901311033s6.devportal.ptc.io";
+const char appKey[] = "909cb96a-e3eb-4b76-8ac3-ca7f96f9997b"; 
+const char thingName[] = "Greenhouse";
+
+
+
+////////////////////////////////////////////////////////
+// Pin Definitions - board specific for Adafruit board//
+////////////////////////////////////////////////////////
+
+const int OFF = HIGH;
+const int ON = LOW;
+
+// this will set as the Accept header for all the HTTP requests to the ThingWorx server
+// valid values are: application/json, text/xml, text/csv, text/html (default)
+
+#define ACCEPT_TYPE "application/json"  
+
+/////////////////////
+//Attempt to make a WiFi connection. Checks if connection has been made once per second until timeout is reached
+//returns TRUE if successful or FALSE if timed out
+/////////////////////
+
+boolean connectToWiFi(int timeout){
+
+  Serial.println("Connecting to: " + String(WiFiSSID));
+  WiFi.begin(WiFiSSID, WiFiPSK);
+
+  // loop while WiFi is not connected waiting one second between checks
+  uint8_t tries = 0; // counter for how many times we have checked
+  while ((WiFi.status() != WL_CONNECTED) && (tries < timeout) ){ // stop checking if connection has been made OR we have timed out
+    tries++;
+    Serial.printf(".");// print . for progress bar
+    Serial.println(WiFi.status());
+    delay(2000);
+  }
+  Serial.println("*"); //visual indication that board is connected or timeout
+
+  if (WiFi.status() == WL_CONNECTED){ //check that WiFi is connected, print status and device IP address before returning
+    Serial.println("WiFi connected");
+    Serial.println("IP address: ");
+    Serial.println(WiFi.localIP());
+    return true;
+  } else { //if WiFi is not connected we must have exceeded WiFi connection timeout
+    return false;
+  }
+
+}
+
+
+
+int sendValue(String nameOfThing, String property, int  value){
+        HTTPClient http;
+        int httpCode = -1;
+        String response = "";
+        Serial.print("[sendValue] begin...");
+        String fullRequestURL = String(TWPlatformBaseURL) + "/Thingworx/Things/"+ nameOfThing +"/Properties/"+ property +"?appKey=" + String(appKey);
+        Serial.println("URL>" + fullRequestURL + "<");
+        http.begin(fullRequestURL);
+        
+        http.addHeader("Accept",ACCEPT_TYPE,false,false);
+        
+        http.addHeader("Content-Type","application/json",false,false);
+        
+        String putBody = "{\"" + property + "\" : " + String(float(value)) + "}";
+        Serial.println("[sendValue] PUT body>" + putBody + "<");
+        // start connection and send HTTP header
+        httpCode = http.PUT(putBody);
+        // httpCode will be negative on error
+        if(httpCode > 0) {
+
+            response = http.getString();
+            Serial.printf("[sendValue] response code:%d body>",httpCode);
+            Serial.println(response + "<\n");
+
+        } else {
+            Serial.printf("[sendValue] PUT... failed, error: %s\n\n", http.errorToString(httpCode).c_str());
+        }
+        http.end();
+        return httpCode;
+}
+
+
+/*int sendValues(String nameOfThing, String valuesJSON){
+        HTTPClient http;
+        int httpCode = -1;
+        String response = "";
+        Serial.print("[sendValue] begin...");
+        String fullRequestURL = String(TWPlatformBaseURL) + "/Thingworx/Things/"+ nameOfThing +"/Services/UpdatePropertyValues/" +"?appKey=" + String(appKey);
+        Serial.println("URL>" + fullRequestURL + "<");
+        http.begin(fullRequestURL);
+        http.addHeader("Accept",ACCEPT_TYPE,false,false);
+        http.addHeader("Content-Type","application/json",false,false);
+        
+        Serial.println("[sendValue] PUT body>" + valuesJSON + "<");
+        // start connection and send HTTP header
+        httpCode = http.PUT(valuesJSON);
+        // httpCode will be negative on error
+        if(httpCode > 0) {
+
+            response = http.getString();
+            Serial.printf("[sendValue] response code:%d body>",httpCode);
+            Serial.println(response + "<\n");
+
+        } else {
+            Serial.printf("[sendValue] PUT... failed, error: %s\n\n", http.errorToString(httpCode).c_str());
+        }
+        http.end();
+        return httpCode;
+}
+*/
+
+void setup() {
+
+    //pinMode(RED_LED, OUTPUT);
+    //pinMode(BLUE_LED, OUTPUT);
+
+    Serial.begin(115200);
+    Serial.setDebugOutput(true);
+    Serial.println();
+    Serial.println();
+    Serial.println();
+
+    Serial.printf("Starting...\n");
+
+    for(uint8_t t = 4; t > 0; t--) {
+        Serial.printf("   WAIT %d...\n", t);
+        Serial.flush();
+        delay(1000);
+    }
+    
+    Serial.println("DHTxx test!");
+
+
+    connectToWiFi(10);
+int    chk = DHT.read(DHT11_PIN);
+    int humidity = DHT.humidity;
+    int temp = DHT.temperature;
+    light = analogRead(ldr);
+     
+    if (WiFi.status() == WL_CONNECTED) { // confirm WiFi is connected then loop forever as long as WiFi is connected
+      sendValue(thingName, "light", light);
+      sendValue(thingName, "humidity", humidity);
+      sendValue(thingName, "temp", temp);
+      
+//      String JSON = "{\"TempVal\" : " + String(temp) + "; \"HumVal\" : " + String(hum) + "}";
+//      sendValues(thingName, JSON);
+    }
+    Serial.printf("****Wifi connection dropped****\n");
+    WiFi.disconnect(true);
+}
+
+void loop()
+{
+}
